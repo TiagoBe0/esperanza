@@ -181,6 +181,7 @@ class TrainingProcessor:
             ))
             data_2 = pipeline_2.compute()
             sm_elip = data_2.attributes.get('ConstructSurfaceMesh.surface_area', 0)
+            filled_vol = data_2.attributes.get('ConstructSurfaceMesh.void_volume', 0)
             sm_mesh_training.append(sm_elip)
             vacancias.append(index+1)
             
@@ -189,7 +190,7 @@ class TrainingProcessor:
             data_3 = pipeline_2.compute()
             max_dist = self.compute_max_distance(data_3)
             min_dist = self.compute_min_distance(data_3)
-            max_distancias.append(max_dist)
+            max_distancias.append(filled_vol)
             min_distancias.append(min_dist)
             vecinos.append(data_3.particles.count)
             
@@ -197,10 +198,9 @@ class TrainingProcessor:
         
         datos_exportar = {
             "sm_mesh_training": sm_mesh_training,
+            "filled_volume": max_distancias,
             "vacancias": vacancias,
-            "vecinos": vecinos,
-            "max_distancias": max_distancias,
-            "min_distancias": min_distancias
+            "vecinos": vecinos
         }
         output_dir = os.path.dirname(self.training_results_file)
         if not os.path.exists(output_dir):

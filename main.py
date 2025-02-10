@@ -15,6 +15,11 @@ from clustering_reffiner import ClusterDumpProcessor
 from format_keys import ExportClusterList
 from cluster_descriptor import SurfaceProcessor
 from main_vacancy_analysis import TrainingProcessor
+from single_vacancy import  SingleVacancyProcessor
+from RF_train import VacancyPredictor
+from RF_train_metodh import VacancyPredictorRF
+import math
+import pandas as pd
 class ClusterProcessor:
     def __init__(self):
         """
@@ -169,6 +174,115 @@ if __name__ == "__main__":
     radius_training = config['radius_training']      # Radio de entrenamiento.
     radius = config['radius']                        # Radio para la malla superficial.
     smoothing_level_training = config['smoothing_level_training']  # Nivel de suavizado para training.
+    other_method = config['other method']  
+    processor_2 = TrainingProcessor(relax, radius_training, radius, smoothing_level_training)
+    processor_2.run()
+
+    processor_3 = SingleVacancyProcessor(config)
+    processor_3.run()
+
+  
+    #predicciones finales 
+    # Instanciar el predictor basado en regresión lineal
+    predictor = VacancyPredictor("outputs.vfinder/training_results.json")
     
-    processor = TrainingProcessor(relax, radius_training, radius, smoothing_level_training)
-    processor.run()
+    # Cargar el archivo JSON de referencia que describe una vacancia única.
+    # Se asume que el archivo tiene la siguiente estructura:
+    # {
+    #   "surface_area": [valor_area],
+    #   "filled_volume": [valor_filled_volume],
+    #   "vecinos": [valor_num_atm]
+    # }
+    with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
+        single_vac = json.load(f)
+    # Extraer los valores de referencia (se asume que cada lista tiene un único elemento)
+    ref_area = single_vac["surface_area"][0]
+    ref_filled_volume = single_vac["filled_volume"][0]
+    ref_vecinos = single_vac["vecinos"][0]
+
+    # Cargar el archivo CSV y extraer las últimas tres columnas:
+    # Se asume que el CSV tiene columnas en el siguiente orden:
+    # [archivo, mejor_radio, area, filled_volume, num_atm]
+    df = pd.read_csv("resultados_procesados.csv")
+    ultimas_tres = df.iloc[:, -3:]
+    
+    # Extraer cada columna en un vector aparte
+    vector_area = ultimas_tres.iloc[:, 0].values
+    vector_filled_volume = ultimas_tres.iloc[:, 1].values
+    vector_num_atm = ultimas_tres.iloc[:, 2].values
+    
+    # Inicializar un contador total
+    total_count = 0
+    
+    # Iterar sobre los vectores utilizando zip e índice i
+    for i, (area, filled_volume, num_atm) in enumerate(zip(vector_area, vector_filled_volume, vector_num_atm)):
+        
+        # Comparar los valores iterados con los de la vacancia única
+        if (math.isclose(area, ref_area, rel_tol=0.1) and 
+            math.isclose(filled_volume, ref_filled_volume, rel_tol=0.1) and 
+            (num_atm == ref_vecinos)):
+            # Si son similares, se predice directamente 1 vacancia
+            vacancias_pred = 1
+            print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
+            total_count+=1
+        else:
+            # En caso contrario, se utiliza el modelo de machine learning
+            vacancias_pred = predictor.predict_vacancies(area, filled_volume, num_atm)
+            print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+            total_count+=vacancias_pred
+
+    print(total_count)
+
+###segundo metodo
+    if other_method:
+            predictor_rf = VacancyPredictorRF("outputs.vfinder/training_results.json")
+
+            # Cargar el archivo JSON de referencia que describe una vacancia única.
+            # Se asume que el archivo tiene la siguiente estructura:
+            # {
+            #   "surface_area": [valor_area],
+            #   "filled_volume": [valor_filled_volume],
+            #   "vecinos": [valor_num_atm]
+            # }
+            with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
+                single_vac = json.load(f)
+            # Extraer los valores de referencia (se asume que cada lista tiene un único elemento)
+            ref_area = single_vac["surface_area"][0]
+            ref_filled_volume = single_vac["filled_volume"][0]
+            ref_vecinos = single_vac["vecinos"][0]
+
+            # Cargar el archivo CSV y extraer las últimas tres columnas:
+            # Se asume que el CSV tiene columnas en el siguiente orden:
+            # [archivo, mejor_radio, area, filled_volume, num_atm]
+            df = pd.read_csv("resultados_procesados.csv")
+            ultimas_tres = df.iloc[:, -3:]
+            
+            # Extraer cada columna en un vector aparte
+            vector_area = ultimas_tres.iloc[:, 0].values
+            vector_filled_volume = ultimas_tres.iloc[:, 1].values
+            vector_num_atm = ultimas_tres.iloc[:, 2].values
+            
+            # Inicializar un contador total
+            total_count = 0
+            
+            # Iterar sobre los vectores utilizando zip e índice i
+            for i, (area, filled_volume, num_atm) in enumerate(zip(vector_area, vector_filled_volume, vector_num_atm)):
+                
+                # Comparar los valores iterados con los de la vacancia única
+                if (math.isclose(area, ref_area, rel_tol=0.1) and 
+                    math.isclose(filled_volume, ref_filled_volume, rel_tol=0.1) and 
+                    (num_atm == ref_vecinos)):
+                    # Si son similares, se predice directamente 1 vacancia
+                    vacancias_pred = 1
+                    total_count += 1
+                    print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
+                else:
+                    # En caso contrario, se utiliza el modelo de machine learning
+                    vacancias_pred = predictor_rf.predict_vacancies(area, filled_volume, num_atm)
+                    print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+                    total_count += vacancias_pred
+            print("\nContador total:", total_count)
+                
+                    
+                
+            

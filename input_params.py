@@ -1,9 +1,9 @@
          
-CONFIG = [{'relax' : 'inputs.dump/main.0',
-          'defect' : 'inputs.dump/M_TST_1',
+CONFIG = [{'relax' : 'inputs.dump/data.relax',
+          'defect' : 'inputs.dump/dump-finalCool.160000',
           'radius' : 2,
           'smoothing level' : 13, 
-          'smoothing_level_training' : 20, 
+          'smoothing_level_training' : 17, 
           'cutoff radius' : 3, 
              'iteraciones':1 ,
               'bOvitoModifiers':True, #Si esta desactivado por defecto se utilizara MultiSOM
@@ -13,7 +13,7 @@ CONFIG = [{'relax' : 'inputs.dump/main.0',
             'divisions_of_cluster':20#1  , 2 o 3
             ,'radius_training':3,
             #TRAINING
-            'sm_mesh_training': True,
+            'other method': True,
         'vecinos':True,
         'max_distancias': False,
         'min_distancias': False
