@@ -5,11 +5,12 @@ from ovito.io import import_file, export_file
 from ovito.modifiers import (ExpressionSelectionModifier,
                              DeleteSelectedModifier,
                              ConstructSurfaceModifier,
-                             InvertSelectionModifier)
+                             InvertSelectionModifier,
+                             AffineTransformationModifier)
 from input_params import CONFIG
 from single_vacancy import SingleVacancyProcessor
 class TrainingProcessor:
-    def __init__(self, relax_file, radius_training, radius, smoothing_level_training, output_dir="outputs.vfinder"):
+    def __init__(self, relax_file, radius_training, radius, smoothing_level_training,strees, output_dir="outputs.vfinder"):
         """
         Inicializa el procesador con la ruta del archivo original (relax_file) y parámetros de entrenamiento.
         
@@ -27,6 +28,7 @@ class TrainingProcessor:
         self.output_dir = output_dir
         self.ids_dump_file = os.path.join(self.output_dir, "ids.training.dump")
         self.training_results_file = os.path.join(self.output_dir, "training_results.json")
+        self.strees = strees
     
     @staticmethod
     def obtener_centro(file_path):
@@ -162,6 +164,13 @@ class TrainingProcessor:
         
         # Paso 3: Procesamiento incremental.
         pipeline_2 = import_file(self.relax_file)
+        
+        pipeline_2.modifiers.append(AffineTransformationModifier(
+            operate_on={'particles','cell'},
+            transformation=[[self.strees[0], 0, 0, 0],
+                            [0, self.strees[1], 0, 0],
+                            [0, 0, self.strees[2], 0]]
+        ))
         sm_mesh_training = []
         vacancias = []
         vecinos = []
@@ -181,6 +190,7 @@ class TrainingProcessor:
             ))
             data_2 = pipeline_2.compute()
             sm_elip = data_2.attributes.get('ConstructSurfaceMesh.surface_area', 0)
+            filled_vol = data_2.attributes.get('ConstructSurfaceMesh.void_volume', 0)
             sm_mesh_training.append(sm_elip)
             vacancias.append(index+1)
             
@@ -189,7 +199,7 @@ class TrainingProcessor:
             data_3 = pipeline_2.compute()
             max_dist = self.compute_max_distance(data_3)
             min_dist = self.compute_min_distance(data_3)
-            max_distancias.append(max_dist)
+            max_distancias.append(filled_vol)
             min_distancias.append(min_dist)
             vecinos.append(data_3.particles.count)
             
@@ -197,10 +207,9 @@ class TrainingProcessor:
         
         datos_exportar = {
             "sm_mesh_training": sm_mesh_training,
+            "filled_volume": max_distancias,
             "vacancias": vacancias,
-            "vecinos": vecinos,
-            "max_distancias": max_distancias,
-            "min_distancias": min_distancias
+            "vecinos": vecinos
         }
         output_dir = os.path.dirname(self.training_results_file)
         if not os.path.exists(output_dir):
