@@ -1,0 +1,28 @@
+{
+    "clusters_criticos": [
+        "outputs.dump/key_area_1.dump",
+        "outputs.dump/key_area_2.dump",
+        "outputs.dump/key_area_3.dump",
+        "outputs.dump/key_area_4.dump"
+    ],
+    "clusters_final": [
+        "outputs.dump/key_area_5.dump",
+        "outputs.dump/key_area_6.dump",
+        "outputs.dump/key_area_7.dump",
+        "outputs.dump/key_area_8.dump",
+        "outputs.dump/key_area_9.dump",
+        "outputs.dump/key_area_10.dump",
+        "outputs.dump/key_area_11.dump",
+        "outputs.dump/key_area_12.dump",
+        "outputs.dump/key_area_13.dump",
+        "outputs.dump/key_area_14.dump",
+        "outputs.dump/key_area_1.dump.0",
+        "outputs.dump/key_area_1.dump.1",
+        "outputs.dump/key_area_2.dump.0",
+        "outputs.dump/key_area_2.dump.1",
+        "outputs.dump/key_area_3.dump.0",
+        "outputs.dump/key_area_3.dump.1",
+        "outputs.dump/key_area_4.dump.0",
+        "outputs.dump/key_area_4.dump.1"
+    ]
+}
