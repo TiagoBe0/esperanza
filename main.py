@@ -19,8 +19,10 @@ from single_vacancy import  SingleVacancyProcessor
 from Di_vacancy import DiVacancyProcessor
 from RF_train import VacancyPredictor
 from RF_train_metodh import VacancyPredictorRF
+from RF_Boost import XGBoostVacancyPredictor
 import math
 import pandas as pd
+
 class ClusterProcessor:
     def __init__(self):
         """
@@ -123,6 +125,138 @@ class ClusterProcessor:
             print(f"Error al extraer encabezado de {file_path}: {e}")
         return encabezado
 
+import json
+import math
+import pandas as pd
+from RF_train_metodh import VacancyPredictorRF  # Se importa para el método RF
+
+
+class VacancyPredictionRunner:
+    def __init__(self, predictor, predictor_rf=None, predictor_xgb=None, other_method=False):
+        # Cargar la referencia para vacancia única.
+        with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
+            single_vac = json.load(f)
+        self.ref_area = single_vac["surface_area"][0]
+        self.ref_filled_volume = single_vac["filled_volume"][0]
+        self.ref_vecinos = single_vac["vecinos"][0]
+
+        # Cargar la referencia para divacancia.
+        with open("outputs.vfinder/key_divacancy.json", "r") as f:
+            diva_vac = json.load(f)
+        self.ref_area_diva = diva_vac["surface_area"][0]
+        self.ref_filled_volume_diva = diva_vac["filled_volume"][0]
+        self.ref_vecinos_diva = diva_vac["vecinos"][0]
+
+        self.predictor = predictor
+        self.predictor_rf = predictor_rf
+        self.other_method = other_method
+        
+        # Si no se proporciona un predictor XGBoost, se carga el modelo desde archivo.
+        if predictor_xgb is None:
+            self.predictor_xgb = xgb.XGBRegressor(objective='reg:squarederror')
+            self.predictor_xgb.load_model("xgboost_model.json")
+        else:
+            self.predictor_xgb = predictor_xgb
+
+        self.vector_area = None
+        self.vector_filled_volume = None
+        self.vector_num_atm = None
+
+    def load_data(self):
+        df = pd.read_csv("resultados_procesados.csv")
+        ultimas_tres = df.iloc[:, -3:]
+        self.vector_area = ultimas_tres.iloc[:, 0].values
+        self.vector_filled_volume = ultimas_tres.iloc[:, 1].values
+        self.vector_num_atm = ultimas_tres.iloc[:, 2].values
+
+    def predict_linear(self):
+        total_count = 0
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
+            if (math.isclose(area, self.ref_area, rel_tol=0.2) or 
+                math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.2) or 
+                (num_atm == self.ref_vecinos)):
+                vacancias_pred = 1
+                total_count += 1
+                print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
+            elif (math.isclose(area, self.ref_area_diva, rel_tol=0.4) and 
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.4) and 
+                  (num_atm == self.ref_vecinos_diva)):
+                vacancias_pred = 2
+                total_count += 2
+                print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
+            else:
+                vacancias_pred = self.predictor.predict_vacancies(area, filled_volume, num_atm)
+                total_count += vacancias_pred
+                print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+        print(f"Predicción lineal regresión: {abs(total_count)}")
+        return total_count
+
+    def predict_rf(self):
+        if not self.other_method or self.predictor_rf is None:
+            print("El método RF no está habilitado o no se proporcionó predictor_rf.")
+            return None
+
+        total_count = 0
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
+            if (math.isclose(area, self.ref_area, rel_tol=0.1) or 
+                math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.1) or 
+                (num_atm == self.ref_vecinos)):
+                vacancias_pred = 1
+                total_count += 1
+                print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
+            elif (math.isclose(area, self.ref_area_diva, rel_tol=0.1) or 
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.1) or 
+                  (num_atm == self.ref_vecinos_diva)):
+                vacancias_pred = 2
+                total_count += 2
+                print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
+            else:
+                vacancias_pred = self.predictor_rf.predict_vacancies(area, filled_volume, num_atm)
+                total_count += vacancias_pred
+                print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+        print("\nContador total random forest:", total_count)
+        return total_count
+
+    def predict_xgb(self):
+        """
+        Utiliza el modelo XGBoost para predecir el número de vacancias.
+        La lógica es similar a los otros métodos: si los valores son similares a los de referencia se fuerza la predicción,
+        de lo contrario se utiliza el modelo XGBoost.
+        """
+        total_count = 0
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
+            # Fuerza predicción para vacancia única.
+            if (math.isclose(area, self.ref_area, rel_tol=0.2) or 
+                math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.2) or 
+                (num_atm == self.ref_vecinos)):
+                vacancias_pred = 1
+                total_count += 1
+                print(f"Iteración {i}: [XGBoost] Valores similares a vacancia única, predicción forzada a 1")
+            # Fuerza predicción para divacancia.
+            elif (math.isclose(area, self.ref_area_diva, rel_tol=0.4) and 
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.4) and 
+                  (num_atm == self.ref_vecinos_diva)):
+                vacancias_pred = 2
+                total_count += 2
+                print(f"Iteración {i}: [XGBoost] Valores similares a divacancia, predicción forzada a 2")
+            else:
+                # Realizar predicción usando el modelo XGBoost.
+                sample_input = np.array([[area, filled_volume, num_atm]])
+                vacancias_pred = self.predictor_xgb.predict(sample_input)[0]
+                total_count += vacancias_pred
+                print(f"Iteración {i}: [XGBoost] Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+        print("Contador total XGBoost:", total_count)
+        return total_count
+
+    def run(self):
+        self.load_data()
+        print("Ejecutando predicción con regresión lineal:")
+        self.predict_linear()
+        if self.other_method:
+            print("Ejecutando predicción con random forest:")
+            self.predict_rf()
+        print("Ejecutando predicción con XGBoost:")
+        self.predict_xgb()
 
 
 
@@ -186,8 +320,6 @@ if __name__ == "__main__":
     processor_4.run()
     #predicciones finales 
     # Instanciar el predictor basado en regresión lineal
-    predictor = VacancyPredictor("outputs.vfinder/training_results.json")
-    
     # Cargar el archivo JSON de referencia que describe una vacancia única.
     # Se asume que el archivo tiene la siguiente estructura:
     # {
@@ -195,95 +327,16 @@ if __name__ == "__main__":
     #   "filled_volume": [valor_filled_volume],
     #   "vecinos": [valor_num_atm]
     # }
-    # Cargar la referencia para vacancia única.
-    with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
-        single_vac = json.load(f)
-    ref_area = single_vac["surface_area"][0]
-    ref_filled_volume = single_vac["filled_volume"][0]
-    ref_vecinos = single_vac["vecinos"][0]
+    from RF_train import VacancyPredictor  # O el predictor que utilices para el método lineal
 
-    # Cargar la referencia para divacancia.
-    with open("outputs.vfinder/key_divacancy.json", "r") as f:
-        diva_vac = json.load(f)
-    ref_area_diva = diva_vac["surface_area"][0]
-    ref_filled_volume_diva = diva_vac["filled_volume"][0]
-    ref_vecinos_diva = diva_vac["vecinos"][0]
-
-    # Cargar el CSV y extraer las últimas tres columnas.
-    df = pd.read_csv("resultados_procesados.csv")
-    ultimas_tres = df.iloc[:, -3:]
-    vector_area = ultimas_tres.iloc[:, 0].values
-    vector_filled_volume = ultimas_tres.iloc[:, 1].values
-    vector_num_atm = ultimas_tres.iloc[:, 2].values
-
-    total_count = 0
-
-    for i, (area, filled_volume, num_atm) in enumerate(zip(vector_area, vector_filled_volume, vector_num_atm)):
-        # Condición para vacancia única.
-        if (math.isclose(area, ref_area, rel_tol=0.2) or
-            math.isclose(filled_volume, ref_filled_volume, rel_tol=0.2) or
-            (num_atm == ref_vecinos)):
-            vacancias_pred = 1
-            total_count += 1
-            print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
-        # Condición para divacancia.
-        elif (math.isclose(area, ref_area_diva, rel_tol=0.4) or 
-            math.isclose(filled_volume, ref_filled_volume_diva, rel_tol=0.4) or 
-            (num_atm == ref_vecinos_diva)):
-            vacancias_pred = 2
-            total_count += 2
-            print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
-        else:
-            vacancias_pred = predictor.predict_vacancies(area, filled_volume, num_atm)
-            total_count += vacancias_pred
-            print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
-
-    print(total_count)
-
-    if other_method:
-        from RF_train_metodh import VacancyPredictorRF
-        predictor_rf = VacancyPredictorRF("outputs.vfinder/training_results.json")
-        
-        # Cargar la referencia para vacancia única.
-        with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
-            single_vac = json.load(f)
-        ref_area = single_vac["surface_area"][0]
-        ref_filled_volume = single_vac["filled_volume"][0]
-        ref_vecinos = single_vac["vecinos"][0]
-        
-        # Cargar la referencia para divacancia.
-        with open("outputs.vfinder/key_divacancy.json", "r") as f:
-            diva_vac = json.load(f)
-        ref_area_diva = diva_vac["surface_area"][0]
-        ref_filled_volume_diva = diva_vac["filled_volume"][0]
-        ref_vecinos_diva = diva_vac["vecinos"][0]
-        
-        df = pd.read_csv("resultados_procesados.csv")
-        ultimas_tres = df.iloc[:, -3:]
-        vector_area = ultimas_tres.iloc[:, 0].values
-        vector_filled_volume = ultimas_tres.iloc[:, 1].values
-        vector_num_atm = ultimas_tres.iloc[:, 2].values
-        
-        total_count = 0
-        
-        for i, (area, filled_volume, num_atm) in enumerate(zip(vector_area, vector_filled_volume, vector_num_atm)):
-            if (math.isclose(area, ref_area, rel_tol=0.1) or
-                math.isclose(filled_volume, ref_filled_volume, rel_tol=0.1) or
-                (num_atm == ref_vecinos)):
-                vacancias_pred = 1
-                total_count += 1
-                print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
-            elif (math.isclose(area, ref_area_diva, rel_tol=0.1) or
-                math.isclose(filled_volume, ref_filled_volume_diva, rel_tol=0.1) or
-                (num_atm == ref_vecinos_diva)):
-                vacancias_pred = 2
-                total_count += 2
-                print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
-            else:
-                vacancias_pred = predictor_rf.predict_vacancies(area, filled_volume, num_atm)
-                total_count += vacancias_pred
-                print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
-        print("\nContador total:", total_count)
+    predictorXG = XGBoostVacancyPredictor()
+    
+    predictor = VacancyPredictor("outputs.vfinder/training_results.json")
+    predictor_rf = VacancyPredictorRF("outputs.vfinder/training_results.json")
+    
+    # Se habilita el uso de métodos adicionales (RF y XGBoost)
+    runner = VacancyPredictionRunner(predictor, predictor_rf=predictor_rf, predictor_xgb=predictorXG,other_method=True)
+    runner.run()
 
                 
                     

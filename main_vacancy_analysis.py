@@ -214,9 +214,22 @@ class TrainingProcessor:
         output_dir = os.path.dirname(self.training_results_file)
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
+        # Cargar datos existentes si el archivo ya existe
+        if os.path.exists(self.training_results_file):
+            with open(self.training_results_file, "r") as f:
+                datos_previos = json.load(f)
+        else:
+            datos_previos = {"sm_mesh_training": [], "filled_volume": [], "vacancias": [], "vecinos": []}
+
+        # Acumular los nuevos datos a los ya existentes
+        datos_previos["sm_mesh_training"].extend(sm_mesh_training)
+        datos_previos["filled_volume"].extend(max_distancias)
+        datos_previos["vacancias"].extend(vacancias)
+        datos_previos["vecinos"].extend(vecinos)
+
         with open(self.training_results_file, "w") as f:
-            json.dump(datos_exportar, f, indent=4)
-        print(f"Resultados exportados a '{self.training_results_file}'.")
+            json.dump(datos_previos, f, indent=4)
+
     
     def run(self):
         """Método para ejecutar la cadena completa del proceso de entrenamiento."""

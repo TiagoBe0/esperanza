@@ -1,8 +1,8 @@
          
 CONFIG = [{'relax' : 'inputs.dump/main.0',
-          'defect' : 'inputs.dump/void_9',
+          'defect' : 'inputs.dump/void_15',
           'radius' : 2,
-          'smoothing level' :13, 
+          'smoothing level' :18, 
           'smoothing_level_training' : 16, 
           'cutoff radius' : 3.5, 
              'iteraciones':1 ,
@@ -10,7 +10,7 @@ CONFIG = [{'relax' : 'inputs.dump/main.0',
             'columns_train':[0,1]#surface,vecinos,norma menor,norma mayor
             ,'strees': [1,1,1],
             'cluster tolerance':1.2,
-            'divisions_of_cluster':20#1  , 2 o 3
+            'divisions_of_cluster':10#1  , 2 o 3
             ,'radius_training':3,
             #TRAINING
             'other method': True,

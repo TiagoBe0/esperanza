@@ -116,5 +116,5 @@ class ExportClusterList:
                 except Exception as e:
                     print(f"Error al exportar {archivo} para cluster {i}: {e}")
         self.save_config()
-        print("clusters_final actualizado en el archivo JSON.")
+        #print("clusters_final actualizado en el archivo JSON.")
 
