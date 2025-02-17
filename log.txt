@@ -1,0 +1,2 @@
+2025-02-17 00:31:15,315 - INFO - Inicio del programa.
+2025-02-17 00:31:19,018 - INFO - Procesamiento completado.
