@@ -19,7 +19,7 @@ CONFIG = [{
     'cutoff radius' : 3.5, 
     
     # Radio utilizado durante el entrenamiento para la selección o generación de datos.
-    'radius_training': 3,
+    'radius_training': 10,
     
     # Indicador para activar o no métodos alternativos (por ejemplo, utilizar otro algoritmo de predicción).
     'other method': True,
@@ -35,7 +35,7 @@ CONFIG = [{
     
     
     # Si es True, se generarán datos sintéticos (generic data) para ampliar el conjunto de entrenamiento.
-    'generic_data': True,
+    'generic_data': False,
     
     # Indicador para activar o no funcionalidades de chat o interacciones en modo conversacional.
     'chat': False,
@@ -44,5 +44,5 @@ CONFIG = [{
 }]
 
 # PREDICTOR_COLUMNS: Lista de columnas que se utilizarán para entrenar el modelo predictivo.
-PREDICTOR_COLUMNS = ['sm_mesh_training']
+PREDICTOR_COLUMNS = ['sm_mesh_training', 'filled_volume', 'vecinos']
 #PREDICTOR_COLUMNS = ['sm_mesh_training', 'filled_volume', 'vecinos']

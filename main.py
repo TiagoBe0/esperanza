@@ -79,35 +79,52 @@ class ClusterProcessor:
         except Exception as e:
             pass
         return encabezado
+import json
+import math
+import os
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+
+from input_params import PREDICTOR_COLUMNS
 
 class VacancyPredictionRunner:
-    def __init__(self, predictor, archivo, predictor_rf=None, predictor_xgb=None, other_method=False):
+    def __init__(self, archivo, 
+                 predictor_small, predictor_large, 
+                 predictor_rf_small, predictor_rf_large, 
+                 predictor_xgb_small, predictor_xgb_large, 
+                 other_method=False):
+     
         self.archivo = archivo
+
         with open("outputs.vfinder/key_single_vacancy.json", "r") as f:
             single_vac = json.load(f)
         self.ref_area = single_vac["surface_area"][0]
         self.ref_filled_volume = single_vac["filled_volume"][0]
         self.ref_vecinos = single_vac["vecinos"][0]
+
         with open("outputs.vfinder/key_divacancy.json", "r") as f:
             diva_vac = json.load(f)
         self.ref_area_diva = diva_vac["surface_area"][0]
         self.ref_filled_volume_diva = diva_vac["filled_volume"][0]
         self.ref_vecinos_diva = diva_vac["vecinos"][0]
-        self.predictor = predictor
-        self.predictor_rf = predictor_rf
+
+        self.predictor_small = predictor_small      # Regresión lineal con pocos datos
+        self.predictor_large = predictor_large      # Regresión lineal con más datos
+        self.predictor_rf_small = predictor_rf_small    # Random Forest con pocos datos
+        self.predictor_rf_large = predictor_rf_large    # Random Forest con más datos
+        self.predictor_xgb_small = predictor_xgb_small  # XGBoost con pocos datos
+        self.predictor_xgb_large = predictor_xgb_large  # XGBoost con más datos
+
         self.other_method = other_method
-        if predictor_xgb is None:
-            self.predictor_xgb = xgb.XGBRegressor(objective='reg:squarederror')
-            self.predictor_xgb.load_model("xgboost_model.json")
-        else:
-            self.predictor_xgb = predictor_xgb
+
         self.vector_area = None
         self.vector_filled_volume = None
         self.vector_num_atm = None
         self.vector_true = None
         self.results = {}
         self.COLUMNS_TRAINING = PREDICTOR_COLUMNS
-    
+
     def load_data(self):
         df = pd.read_csv("resultados_procesados.csv")
         ultimas_tres = df.iloc[:, -3:]
@@ -119,16 +136,17 @@ class VacancyPredictionRunner:
         else:
             print("No se encontró la columna 'vacancies'. No se calcularán errores cuadráticos.")
             self.vector_true = None
-    
+
     def predict_linear(self):
-        # Imprimir las columnas activas definidas en el predictor
-        print("Columnas activas para el predictor:", self.predictor.columns)
-        
+        print("Columnas activas para el predictor lineal (regresión):", self.predictor_small.columns)
         total_count = 0
         predictions = []
         errors = []
-        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
-            # Comparación con las vacancias de referencia para forzar la predicción
+        threshold = 5 * self.ref_area  
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, 
+                                                                self.vector_filled_volume, 
+                                                                self.vector_num_atm)):
+            # Comparación para forzar predicción
             if (math.isclose(area, self.ref_area, rel_tol=0.3) or 
                 math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.3) or 
                 (num_atm == self.ref_vecinos)):
@@ -136,88 +154,100 @@ class VacancyPredictionRunner:
                 total_count += 1
                 print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
             elif (math.isclose(area, self.ref_area_diva, rel_tol=0.2) or 
-                math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
-                (num_atm == self.ref_vecinos_diva)):
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
+                  (num_atm == self.ref_vecinos_diva)):
                 vacancias_pred = 2
                 total_count += 2
                 print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
             else:
-                # Construir un diccionario con las características activas según la configuración
                 features = {}
-                if "sm_mesh_training" in self.predictor.columns:
+                if "sm_mesh_training" in self.predictor_small.columns:
                     features["sm_mesh_training"] = area
-                if "filled_volume" in self.predictor.columns:
+                if "filled_volume" in self.predictor_small.columns:
                     features["filled_volume"] = filled_volume
-                if "vecinos" in self.predictor.columns:
+                if "vecinos" in self.predictor_small.columns:
                     features["vecinos"] = num_atm
-                
-                # Llamar al método usando argumentos nombrados
-                vacancias_pred = self.predictor.predict_vacancies(**features)
+
+                if area < threshold:
+                    vacancias_pred = self.predictor_small.predict_vacancies(**features)
+                    print(f"Iteración {i}: [Linear Small] Características {features} -> Vacancias Predichas = {abs(vacancias_pred)}")
+                else:
+                    vacancias_pred = self.predictor_large.predict_vacancies(**features)
+                    print(f"Iteración {i}: [Linear Large] Características {features} -> Vacancias Predichas = {abs(vacancias_pred)}")
                 total_count += vacancias_pred
-                print(f"Iteración {i}: Características {features} -> Vacancias Predichas = {abs(vacancias_pred)}")
-            
+
             predictions.append(vacancias_pred)
             if self.vector_true is not None:
                 error = (vacancias_pred - self.vector_true[i])**2
                 errors.append(error)
             else:
                 errors.append(None)
-        
         print(f"Predicción lineal regresión: {abs(total_count)}")
         if self.vector_true is not None:
-            mse = sum(errors)/len(errors)
+            mse = sum(errors) / len(errors)
             print(f"Error cuadrático medio (Linear): {mse}")
         return total_count, predictions, errors
 
     def predict_rf(self):
-        if not self.other_method or self.predictor_rf is None:
-            print("El método RF no está habilitado o no se proporcionó predictor_rf.")
+        if not self.other_method or self.predictor_rf_small is None or self.predictor_rf_large is None:
+            print("El método RF no está habilitado o no se proporcionaron ambos objetos predictor_rf.")
             return None, [], []
         total_count = 0
         predictions = []
         errors = []
-        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
+        threshold = 5 * self.ref_area
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, 
+                                                                self.vector_filled_volume, 
+                                                                self.vector_num_atm)):
             if (math.isclose(area, self.ref_area, rel_tol=0.3) or 
                 math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.3) or 
                 (num_atm == self.ref_vecinos)):
                 vacancias_pred = 1
                 total_count += 1
-                print(f"Iteración {i}: Valores similares a vacancia única, predicción forzada a 1")
+                print(f"Iteración {i}: [RF] Valores similares a vacancia única, predicción forzada a 1")
             elif (math.isclose(area, self.ref_area_diva, rel_tol=0.2) or 
-                math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
-                (num_atm == self.ref_vecinos_diva)):
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
+                  (num_atm == self.ref_vecinos_diva)):
                 vacancias_pred = 2
                 total_count += 2
-                print(f"Iteración {i}: Valores similares a divacancia, predicción forzada a 2")
+                print(f"Iteración {i}: [RF] Valores similares a divacancia, predicción forzada a 2")
             else:
-                # Construir el diccionario de características de acuerdo a las columnas activas
                 features = {}
-                if "sm_mesh_training" in self.predictor_rf.columns:
+                if "sm_mesh_training" in self.predictor_rf_small.columns:
                     features["sm_mesh_training"] = area
-                if "filled_volume" in self.predictor_rf.columns:
+                if "filled_volume" in self.predictor_rf_small.columns:
                     features["filled_volume"] = filled_volume
-                if "vecinos" in self.predictor_rf.columns:
+                if "vecinos" in self.predictor_rf_small.columns:
                     features["vecinos"] = num_atm
-                vacancias_pred = self.predictor_rf.predict_vacancies(**features)
+
+                if area < threshold:
+                    vacancias_pred = self.predictor_rf_small.predict_vacancies(**features)
+                    print(f"Iteración {i}: [RF Small] Características {features} -> Vacancias Predichas = {vacancias_pred}")
+                else:
+                    vacancias_pred = self.predictor_rf_large.predict_vacancies(**features)
+                    print(f"Iteración {i}: [RF Large] Características {features} -> Vacancias Predichas = {vacancias_pred}")
                 total_count += vacancias_pred
-                print(f"Iteración {i}: Área = {area}, Filled Volume = {filled_volume}, cluster_size = {num_atm} -> Vacancias Predichas = {vacancias_pred}")
+
             predictions.append(vacancias_pred)
             if self.vector_true is not None:
                 error = (vacancias_pred - self.vector_true[i])**2
                 errors.append(error)
             else:
                 errors.append(None)
-        print("\nContador total random forest:", total_count)
+        print("\nContador total Random Forest:", total_count)
         if self.vector_true is not None and errors:
-            mse = sum(errors)/len(errors)
+            mse = sum(errors) / len(errors)
             print(f"Error cuadrático medio (RF): {mse}")
         return total_count, predictions, errors
-    
+
     def predict_xgb(self):
         total_count = 0
         predictions = []
         errors = []
-        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, self.vector_filled_volume, self.vector_num_atm)):
+        threshold = 5 * self.ref_area
+        for i, (area, filled_volume, num_atm) in enumerate(zip(self.vector_area, 
+                                                                self.vector_filled_volume, 
+                                                                self.vector_num_atm)):
             if (math.isclose(area, self.ref_area, rel_tol=0.3) or 
                 math.isclose(filled_volume, self.ref_filled_volume, rel_tol=0.3) or 
                 (num_atm == self.ref_vecinos)):
@@ -225,25 +255,31 @@ class VacancyPredictionRunner:
                 total_count += 1
                 print(f"Iteración {i}: [XGBoost] Valores similares a vacancia única, predicción forzada a 1")
             elif (math.isclose(area, self.ref_area_diva, rel_tol=0.2) or 
-                math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
-                (num_atm == self.ref_vecinos_diva)):
+                  math.isclose(filled_volume, self.ref_filled_volume_diva, rel_tol=0.2) or 
+                  (num_atm == self.ref_vecinos_diva)):
                 vacancias_pred = 2
                 total_count += 2
                 print(f"Iteración {i}: [XGBoost] Valores similares a divacancia, predicción forzada a 2")
             else:
-                # Construir el diccionario de características según las columnas activas del predictor XGBoost
                 features = {}
-                if "sm_mesh_training" in self.predictor_xgb.columns:
+                if "sm_mesh_training" in self.predictor_xgb_small.columns:
                     features["sm_mesh_training"] = area
-                if "filled_volume" in self.predictor_xgb.columns:
+                if "filled_volume" in self.predictor_xgb_small.columns:
                     features["filled_volume"] = filled_volume
-                if "vecinos" in self.predictor_xgb.columns:
+                if "vecinos" in self.predictor_xgb_small.columns:
                     features["vecinos"] = num_atm
-                # Crear el array en el orden definido por predictor_xgb.columns
-                sample_input = np.array([[features[col] for col in self.predictor_xgb.columns]])
-                vacancias_pred = self.predictor_xgb.predict(sample_input)[0]
+
+                # Crear el array de entrada según el orden de columnas
+                if area < threshold:
+                    sample_input = np.array([[features[col] for col in self.predictor_xgb_small.columns]])
+                    vacancias_pred = self.predictor_xgb_small.predict(sample_input)[0]
+                    print(f"Iteración {i}: [XGBoost Small] Características {features} -> Vacancias Predichas = {vacancias_pred}")
+                else:
+                    sample_input = np.array([[features[col] for col in self.predictor_xgb_large.columns]])
+                    vacancias_pred = self.predictor_xgb_large.predict(sample_input)[0]
+                    print(f"Iteración {i}: [XGBoost Large] Características {features} -> Vacancias Predichas = {vacancias_pred}")
                 total_count += vacancias_pred
-                print(f"Iteración {i}: [XGBoost] Características {features} -> Vacancias Predichas = {vacancias_pred}")
+
             predictions.append(vacancias_pred)
             if self.vector_true is not None:
                 error = (vacancias_pred - self.vector_true[i])**2
@@ -252,11 +288,10 @@ class VacancyPredictionRunner:
                 errors.append(None)
         print("Contador total XGBoost:", total_count)
         if self.vector_true is not None and errors:
-            mse = sum(errors)/len(errors)
+            mse = sum(errors) / len(errors)
             print(f"Error cuadrático medio (XGBoost): {mse}")
         return total_count, predictions, errors
 
-    
     def export_results(self):
         dfs = []
         for method, data in self.results.items():
@@ -276,12 +311,11 @@ class VacancyPredictionRunner:
             os.makedirs(output_dir, exist_ok=True)
             output_file = os.path.join(output_dir, f"{base_name}.csv")
             final_df.to_csv(output_file, index=False)
-            #print(f"Resultados exportados a '{output_file}'")
         else:
             print("No hay resultados para exportar.")
-    
+
     def export_totals(self):
-        totals_dict = { method: data["total"] for method, data in self.results.items() }
+        totals_dict = {method: data["total"] for method, data in self.results.items()}
         df_totals = pd.DataFrame(list(totals_dict.items()), columns=["modelo", "contador_total"])
         output_dir = "outputs.vfinder"
         base_name = os.path.basename(self.archivo)
@@ -289,20 +323,23 @@ class VacancyPredictionRunner:
         output_file = os.path.join(output_dir, f"{base_name}_totales_vacancias.csv")
         df_totals.to_csv(output_file, index=False)
         print(f"Contadores totales exportados a '{output_file}'")
-    
+
     def run(self):
         self.load_data()
         self.results = {}
         print("Ejecutando predicción con regresión lineal:")
         total_linear, predictions_linear, errors_linear = self.predict_linear()
         self.results["linear"] = {"total": total_linear, "predictions": predictions_linear, "errors": errors_linear}
+
         if self.other_method:
             print("Ejecutando predicción con random forest:")
             total_rf, predictions_rf, errors_rf = self.predict_rf()
             self.results["rf"] = {"total": total_rf, "predictions": predictions_rf, "errors": errors_rf}
+
         print("Ejecutando predicción con XGBoost:")
         total_xgb, predictions_xgb, errors_xgb = self.predict_xgb()
         self.results["xgb"] = {"total": total_xgb, "predictions": predictions_xgb, "errors": errors_xgb}
+
         self.export_results()
         self.export_totals()
 
@@ -605,18 +642,26 @@ if __name__ == "__main__":
         generator.export_to_json(output_json_path, synthetic_data)
 
 
+    predictor_small = VacancyPredictor("outputs.vfinder/training_results.json")
+    predictor_large = VacancyPredictor("outputs.vfinder/training_results.json")
 
+    predictor_rf_small = VacancyPredictorRF("outputs.vfinder/defect_data.json")
+    predictor_rf_large = VacancyPredictorRF("outputs.vfinder/training_results.json")
 
+    predictor_xgb_small = XGBoostVacancyPredictor("outputs.vfinder/defect_data.json")
+    predictor_xgb_large = XGBoostVacancyPredictor("outputs.vfinder/training_results.json")
 
-
-
-    ##########
-    predictorXG = XGBoostVacancyPredictor()
-    predictor = VacancyPredictor("outputs.vfinder/training_results.json")
-    predictor_rf = VacancyPredictorRF("outputs.vfinder/training_results.json")
-    runner = VacancyPredictionRunner(predictor, config['defect'], predictor_rf=predictor_rf, predictor_xgb=predictorXG, other_method=True)
+    runner = VacancyPredictionRunner(
+        archivo=config['defect'],
+        predictor_small=predictor_small,
+        predictor_large=predictor_large,
+        predictor_rf_small=predictor_rf_small,
+        predictor_rf_large=predictor_rf_large,
+        predictor_xgb_small=predictor_xgb_small,
+        predictor_xgb_large=predictor_xgb_large,
+        other_method=True
+    )
     runner.run()
-    logger.info("Procesamiento completado.")
 
 
 

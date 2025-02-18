@@ -1,4 +1,4 @@
 modelo,contador_total
-linear,5.0
-rf,5.0
-xgb,4.237913131713867
+linear,45009.0
+rf,4.0
+xgb,3.001063108444214

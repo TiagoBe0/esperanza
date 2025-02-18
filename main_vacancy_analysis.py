@@ -82,6 +82,7 @@ class TrainingProcessor:
         distances = np.linalg.norm(positions - center_of_mass, axis=1)
         return np.min(distances)
 
+
     def run_training(self):
         self.export_training_dump()
         particle_ids_list = self.extract_particle_ids()
@@ -97,6 +98,7 @@ class TrainingProcessor:
         vecinos = []
         max_distancias = []
         min_distancias = []
+        
         for index in range(len(particle_ids_list)):
             ids_a_eliminar = particle_ids_list[:index + 1]
             condition_f = TrainingProcessor.crear_condicion_ids(ids_a_eliminar)
@@ -122,26 +124,42 @@ class TrainingProcessor:
             min_distancias.append(min_dist)
             vecinos.append(data_3.particles.count)
             pipeline_2.modifiers.clear()
+        
         datos_exportar = {
             "sm_mesh_training": sm_mesh_training,
             "filled_volume": max_distancias,
             "vacancias": vacancias,
             "vecinos": vecinos
         }
+        
         output_dir = os.path.dirname(self.training_results_file)
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
+        
         if os.path.exists(self.training_results_file):
             with open(self.training_results_file, "r") as f:
                 datos_previos = json.load(f)
         else:
             datos_previos = {"sm_mesh_training": [], "filled_volume": [], "vacancias": [], "vecinos": []}
+        
         datos_previos["sm_mesh_training"].extend(sm_mesh_training)
         datos_previos["filled_volume"].extend(max_distancias)
         datos_previos["vacancias"].extend(vacancias)
         datos_previos["vecinos"].extend(vecinos)
+        
         with open(self.training_results_file, "w") as f:
             json.dump(datos_previos, f, indent=4)
+        
+        # --- Nueva exportación: primeros 5 datos de las 5 primeras iteraciones ---
+        primeros_datos = {
+            "sm_mesh_training": sm_mesh_training[:9],
+            "filled_volume": max_distancias[:9],
+            "vacancias": vacancias[:9],
+            "vecinos": vecinos[:9]
+        }
+        primeros_datos_file = os.path.join(output_dir, "defect_data.json")
+        with open(primeros_datos_file, "w") as f:
+            json.dump(primeros_datos, f, indent=4)
 
     def run(self):
         self.run_training()
