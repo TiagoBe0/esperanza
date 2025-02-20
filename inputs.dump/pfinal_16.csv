@@ -1,0 +1,7 @@
+iteration,method,prediction,true_value,squared_error
+0,linear,2,,
+1,linear,2,,
+0,rf,2,,
+1,rf,2,,
+0,xgb,2,,
+1,xgb,2,,

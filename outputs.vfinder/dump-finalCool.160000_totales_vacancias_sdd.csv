@@ -1,0 +1,52 @@
+modelo,contador_total
+linear,527.0
+rf,503.0
+xgb,429.07214868068695
+# CONFIG: Lista de diccionarios con la configuración para el procesamiento y entrenamiento.
+CONFIG = [{
+    # Ruta al archivo de entrada para el cálculo de relajación de la estructura.
+    'relax' : 'inputs.dump/data.relax',
+    
+    # Ruta al archivo de entrada que describe el defecto o vacancia (por ejemplo, void_7).
+    'defect' : 'inputs.dump/dump-finalCool.160000',
+
+    # Parámetro de radio para cálculos de área de influencia u otros procesos geométricos.
+    'radius' : 2,
+    
+    # Nivel de suavizado aplicado a los datos durante el preprocesamiento.
+    'smoothing level' : 0, 
+    
+    # Nivel de suavizado específico para los datos de entrenamiento.
+    'smoothing_level_training' : 0, 
+    
+    # Radio de corte: define el límite a partir del cual se ignoran interacciones o se delimita el área.
+    'cutoff radius' : 3.5, 
+    
+    # Radio utilizado durante el entrenamiento para la selección o generación de datos.
+    'radius_training': 3,
+    
+    # Indicador para activar o no métodos alternativos (por ejemplo, utilizar otro algoritmo de predicción).
+    'other method': True,
+    
+    # Lista de parámetros de "strees" (podrían representar tensiones o factores internos en el sistema).
+    'strees': [1, 1, 1],
+    
+    # Tolerancia en la agrupación (clustering): define la distancia máxima para considerar puntos en el mismo grupo.
+    'cluster tolerance': 1.3,
+    
+    # Factor de división del cluster: puede ajustarse para definir cuántas particiones se desean (por ejemplo, 1, 2 o 3).
+    'divisions_of_cluster': 1.3,  # Valores sugeridos: 1, 2 o 3.
+    
+    # Lista de columnas que se utilizarán para el entrenamiento del modelo.
+    # Opciones disponibles: "sm_mesh_training", "filled_volume", "vecinos".
+    'training': ["sm_mesh_training"],
+    
+    # Si es True, se generarán datos sintéticos (generic data) para ampliar el conjunto de entrenamiento.
+    'generic_data': False,
+    
+    # Indicador para activar o no funcionalidades de chat o interacciones en modo conversacional.
+    'chat': False
+}]
+
+# PREDICTOR_COLUMNS: Lista de columnas que se utilizarán para entrenar el modelo predictivo.
+PREDICTOR_COLUMNS = ['sm_mesh_training', 'filled_volume', 'vecinos']

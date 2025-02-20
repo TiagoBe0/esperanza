@@ -1,0 +1,4 @@
+modelo,contador_total
+linear,15
+rf,15
+xgb,15
